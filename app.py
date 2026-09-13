@@ -52,7 +52,7 @@ def analyze_stock(ticker_symbol, tf):
     try:
         data = yf.Ticker(ticker_ns)
         # 1mo period is safer for weekend data retrieval
-        df = data.history(period="1mo", interval=tf)
+        df = data.history(period="60d", interval=tf)
         
         if df.empty or len(df) < 10:
             return None
