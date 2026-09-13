@@ -49,74 +49,78 @@ def analyze_stock(ticker_symbol, tf):
     ticker_clean = ticker_symbol.strip().upper()
     ticker_ns = ticker_clean + ".NS" if not ticker_clean.endswith(".NS") else ticker_clean
     
-    data = yf.Ticker(ticker_ns)
-    df = data.history(period="5d", interval=tf)
-    
-    if df.empty or len(df) < 30:
-        return None
-    
-    close = df['Close']
-    high = df['High']
-    low = df['Low']
-    volume = df['Volume']
-    
-    df['VWAP'] = calculate_vwap(df)
-    df['EMA20'] = ta.trend.ema_indicator(close, window=20)
-    df['EMA50'] = ta.trend.ema_indicator(close, window=50)
-    df['RSI'] = ta.momentum.rsi(close, window=14)
-    df['ATR'] = ta.volatility.average_true_range(high, low, close, window=14)
-    
-    macd_obj = ta.trend.MACD(close)
-    df['MACD'] = macd_obj.macd()
-    df['MACD_SIG'] = macd_obj.macd_signal()
-    df['VOL_SMA'] = ta.trend.sma_indicator(volume, window=20)
-    
-    latest = df.iloc[-1]
-    price = float(latest['Close'])
-    rsi = float(latest['RSI'])
-    atr = float(latest['ATR'])
-    ema20 = float(latest['EMA20'])
-    ema50 = float(latest['EMA50'])
-    vwap = float(latest['VWAP'])
-    macd_val = float(latest['MACD'])
-    macd_sig = float(latest['MACD_SIG'])
-    curr_vol = float(latest['Volume'])
-    avg_vol = float(latest['VOL_SMA']) if not np.isnan(latest['VOL_SMA']) else 1.0
-    vol_ratio = curr_vol / avg_vol if avg_vol > 0 else 1.0
-    
-    # Institutional Confluence Scoring Algorithm (0 - 100)
-    score = 0
-    if ema20 > ema50 and price > vwap: score += 30
-    elif ema20 < ema50 and price < vwap: score += 30
-    
-    if vol_ratio >= 1.5: score += 25
-    elif vol_ratio >= 1.0: score += 15
-    
-    if (atr / price) * 100 >= 0.5: score += 15
-    if 40 <= rsi <= 65: score += 10
-    
-    if abs(macd_val - macd_sig) > 0: score += 20
-
-    # Signal Logic
-    signal = "NEUTRAL ⏸️"
-    sl, tp1, tp2 = 0.0, 0.0, 0.0
-    
-    if price > vwap and ema20 > ema50 and macd_val > macd_sig and rsi < 60 and vol_ratio >= 1.0 and score >= 65:
-        signal = "STRONG BUY 🚀"
-        sl = price - (atr * 1.5)
-        tp1 = price + (atr * 2.0)
-        tp2 = price + (atr * 3.5)
-    elif price < vwap and ema20 < ema50 and macd_val < macd_sig and rsi > 40 and vol_ratio >= 1.0 and score >= 65:
-        signal = "STRONG SELL 💥"
-        sl = price + (atr * 1.5)
-        tp1 = price - (atr * 2.0)
-        tp2 = price - (atr * 3.5)
+    try:
+        data = yf.Ticker(ticker_ns)
+        # 1mo period is safer for weekend data retrieval
+        df = data.history(period="1mo", interval=tf)
         
-    return {
-        'df': df, 'symbol': ticker_clean, 'price': price, 'signal': signal, 
-        'score': score, 'vwap': vwap, 'ema20': ema20, 'ema50': ema50,
-        'rsi': rsi, 'atr': atr, 'vol_ratio': vol_ratio, 'sl': sl, 'tp1': tp1, 'tp2': tp2
-    }
+        if df.empty or len(df) < 10:
+            return None
+        
+        close = df['Close']
+        high = df['High']
+        low = df['Low']
+        volume = df['Volume']
+        
+        df['VWAP'] = calculate_vwap(df)
+        df['EMA20'] = ta.trend.ema_indicator(close, window=20)
+        df['EMA50'] = ta.trend.ema_indicator(close, window=50)
+        df['RSI'] = ta.momentum.rsi(close, window=14)
+        df['ATR'] = ta.volatility.average_true_range(high, low, close, window=14)
+        
+        macd_obj = ta.trend.MACD(close)
+        df['MACD'] = macd_obj.macd()
+        df['MACD_SIG'] = macd_obj.macd_signal()
+        df['VOL_SMA'] = ta.trend.sma_indicator(volume, window=20)
+        
+        latest = df.iloc[-1]
+        price = float(latest['Close'])
+        rsi = float(latest['RSI']) if not np.isnan(latest['RSI']) else 50.0
+        atr = float(latest['ATR']) if not np.isnan(latest['ATR']) else 2.0
+        ema20 = float(latest['EMA20']) if not np.isnan(latest['EMA20']) else price
+        ema50 = float(latest['EMA50']) if not np.isnan(latest['EMA50']) else price
+        vwap = float(latest['VWAP']) if not np.isnan(latest['VWAP']) else price
+        macd_val = float(latest['MACD']) if not np.isnan(latest['MACD']) else 0.0
+        macd_sig = float(latest['MACD_SIG']) if not np.isnan(latest['MACD_SIG']) else 0.0
+        curr_vol = float(latest['Volume'])
+        avg_vol = float(latest['VOL_SMA']) if not np.isnan(latest['VOL_SMA']) and latest['VOL_SMA'] > 0 else 1.0
+        vol_ratio = curr_vol / avg_vol
+        
+        # Institutional Confluence Scoring Algorithm (0 - 100)
+        score = 0
+        if ema20 > ema50 and price > vwap: score += 30
+        elif ema20 < ema50 and price < vwap: score += 30
+        
+        if vol_ratio >= 1.5: score += 25
+        elif vol_ratio >= 1.0: score += 15
+        
+        if (atr / price) * 100 >= 0.5: score += 15
+        if 40 <= rsi <= 65: score += 10
+        
+        if abs(macd_val - macd_sig) > 0: score += 20
+
+        # Signal Logic
+        signal = "NEUTRAL ⏸️"
+        sl, tp1, tp2 = 0.0, 0.0, 0.0
+        
+        if price > vwap and ema20 > ema50 and macd_val > macd_sig and rsi < 65 and vol_ratio >= 0.8 and score >= 60:
+            signal = "STRONG BUY 🚀"
+            sl = price - (atr * 1.5)
+            tp1 = price + (atr * 2.0)
+            tp2 = price + (atr * 3.5)
+        elif price < vwap and ema20 < ema50 and macd_val < macd_sig and rsi > 35 and vol_ratio >= 0.8 and score >= 60:
+            signal = "STRONG SELL 💥"
+            sl = price + (atr * 1.5)
+            tp1 = price - (atr * 2.0)
+            tp2 = price - (atr * 3.5)
+            
+        return {
+            'df': df, 'symbol': ticker_clean, 'price': price, 'signal': signal, 
+            'score': score, 'vwap': vwap, 'ema20': ema20, 'ema50': ema50,
+            'rsi': rsi, 'atr': atr, 'vol_ratio': vol_ratio, 'sl': sl, 'tp1': tp1, 'tp2': tp2
+        }
+    except Exception as e:
+        return None
 
 # Navigation / Tabs
 tab1, tab2 = st.tabs(["🎯 Single Stock Terminal & Chart", "🔥 Multi-Stock Auto Scanner"])
@@ -139,7 +143,7 @@ with tab1:
     if stock_input:
         res = analyze_stock(stock_input, selected_tf)
         if res is None:
-            st.error("❌ Invalid Stock Symbol or Data Unavailable!")
+            st.error("❌ Invalid Stock Symbol or Data Unavailable! (Try during market hours or change timeframe)")
         else:
             df = res['df']
             p, r1, s1, r2, s2 = calculate_pivots(df)
@@ -235,4 +239,4 @@ with tab2:
             return ''
             
         st.dataframe(scan_df.style.map(color_signals, subset=['Signal']), use_container_width=True)
-    
+        
