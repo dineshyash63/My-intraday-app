@@ -51,10 +51,14 @@ def analyze_stock(ticker_symbol, tf):
     
     try:
         data = yf.Ticker(ticker_ns)
-        # 1mo period is safer for weekend data retrieval
-        df = data.history(period="60d", interval=tf)
+        # Try fetching intraday data first
+        df = data.history(period="1mo", interval=tf)
         
-        if df.empty or len(df) < 10:
+        # Fallback to Daily data if intraday is empty (Weekend / Holiday Fix)
+        if df.empty or len(df) < 5:
+            df = data.history(period="3mo", interval="1d")
+            
+        if df.empty:
             return None
         
         close = df['Close']
@@ -143,7 +147,7 @@ with tab1:
     if stock_input:
         res = analyze_stock(stock_input, selected_tf)
         if res is None:
-            st.error("❌ Invalid Stock Symbol or Data Unavailable! (Try during market hours or change timeframe)")
+            st.error("❌ Invalid Stock Symbol or Data Unavailable!")
         else:
             df = res['df']
             p, r1, s1, r2, s2 = calculate_pivots(df)
